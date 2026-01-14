@@ -1,0 +1,164 @@
+import asyncio
+import edge_tts
+import speech_recognition as sr
+import os
+import time
+from datetime import datetime
+
+# ================== CONFIG ==================
+VOICE = "ja-JP-NanamiNeural"
+AUDIO_DIR = r"D:\jap"
+AUDIO_FILE = os.path.join(AUDIO_DIR, "reply.mp3")
+STOP_WORDS = ["うるせい", "やめて"]
+
+os.makedirs(AUDIO_DIR, exist_ok=True)
+
+# ================== TEXT TO SPEECH ==================
+async def speak(text):
+    tts = edge_tts.Communicate(text, VOICE)
+    await tts.save(AUDIO_FILE)
+
+    # Play using default Windows player
+    os.startfile(AUDIO_FILE)
+
+    # Wait for playback (increase if replies are long)
+    time.sleep(3)
+
+    # Delete MP3 after playback
+    if os.path.exists(AUDIO_FILE):
+        os.remove(AUDIO_FILE)
+
+# ================== TIME ==================
+def tell_time_japanese():
+    now = datetime.now()
+    h, m = now.hour, now.minute
+    if m == 0:
+        return f"今は{h}時です。"
+    return f"今は{h}時{m}分です。"
+
+# ================== DAILY CONVERSATIONS ==================
+DAILY_CONVERSATIONS = {
+    # Greetings
+    "こんにちは": "こんにちは！今日はどうですか？",
+    "おはよう": "おはようございます！",
+    "こんばんは": "こんばんは。お疲れさまです。",
+    "やあ": "やあ！元気？",
+    "どうも": "どうも！",
+    "久しぶり": "久しぶりですね！",
+    "初めまして": "初めまして。よろしくお願いします。",
+
+    # Feelings
+    "元気": "はい、元気です。あなたは？",
+    "疲れた": "お疲れさまです。少し休みましょう。",
+    "眠い": "無理しないで休んでください。",
+    "眠たい": "今日は早く寝ましょう。",
+    "嬉しい": "それは良かったですね！",
+    "悲しい": "無理しないでください。",
+    "イライラ": "深呼吸してみましょう。",
+    "寂しい": "一人じゃないですよ。",
+    "不安": "大丈夫ですよ。",
+
+    # Daily life
+    "起きた": "おはようございます！",
+    "寝る": "おやすみなさい。",
+    "ご飯": "何を食べましたか？",
+    "朝ごはん": "朝ごはんは大事ですよ。",
+    "昼ごはん": "昼ごはんは食べましたか？",
+    "夜ごはん": "夜ごはんは何ですか？",
+    "お風呂": "ゆっくりしてください。",
+    "掃除": "きれいになると気持ちいいですね。",
+    "洗濯": "お疲れさまです。",
+    "買い物": "何を買いましたか？",
+
+    # Food
+    "お腹すいた": "何か食べたいですね。",
+    "お腹いっぱい": "それは良かったですね。",
+    "美味しい": "いいですね！",
+    "まずい": "そうなんですね。",
+    "甘い": "甘いものは幸せですね。",
+    "辛い": "辛いのは大丈夫ですか？",
+    "ラーメン": "ラーメンは美味しいですよね。",
+    "カレー": "カレーいいですね！",
+    "寿司": "お寿司は最高ですね。",
+
+    # Weather
+    "暑い": "暑いですね。水を飲みましょう。",
+    "寒い": "寒いですね。暖かくしてください。",
+    "雨": "雨ですね。気をつけてください。",
+    "晴れ": "いい天気ですね。",
+    "雪": "滑らないように注意してください。",
+
+    # Work / Study
+    "勉強": "勉強は大切ですね。",
+    "仕事": "お仕事お疲れさまです。",
+    "学校": "学校はどうでしたか？",
+    "宿題": "早めに終わらせましょう。",
+    "課題": "計画的にやりましょう。",
+    "テスト": "頑張ってください！",
+
+    # Polite
+    "ありがとう": "どういたしまして！",
+    "ありがとうね": "どういたしまして！",
+    "すみません": "大丈夫ですよ。",
+    "助けて": "どうしましたか？",
+
+    # Identity
+    "お名前": "ラアダアです。",
+    "誰ですか": "あなたの妹です。"
+    
+}
+
+# ================== REPLY LOGIC ==================
+def japanese_reply(text):
+    text = text.strip()
+
+    # Stop command
+    if any(word in text for word in STOP_WORDS):
+        asyncio.run(speak("わかりました。止めます。"))
+        print("🛑 Stop command detected")
+        os._exit(0)
+
+    # Time question
+    if any(k in text for k in ["今何時", "何時ですか", "今の時間"]):
+        return tell_time_japanese()
+
+    # Daily conversations
+    for key, response in DAILY_CONVERSATIONS.items():
+        if key in text:
+            return response
+
+    return "なるほど。もう少し話してください。"
+
+# ================== SPEECH CALLBACK ==================
+def callback(recognizer, audio):
+    try:
+        text = recognizer.recognize_google(audio, language="ja-JP")
+        print("🗣 You said:", text)
+
+        reply = japanese_reply(text)
+        print("🤖 Reply:", reply)
+
+        asyncio.run(speak(reply))
+
+    except sr.UnknownValueError:
+        print("❌ 聞き取れませんでした")
+    except sr.RequestError as e:
+        print("⚠️ API error:", e)
+
+# ================== MAIN LISTENER ==================
+r = sr.Recognizer()
+mic = sr.Microphone()
+
+with mic as source:
+    r.adjust_for_ambient_noise(source)
+
+print("🎤 日本語で話してください（「うるせい / やめて」で終了）...")
+
+stop_listening = r.listen_in_background(mic, callback)
+
+try:
+    while True:
+        time.sleep(0.1)
+except KeyboardInterrupt:
+    stop_listening()
+    print("🛑 Stopped")
